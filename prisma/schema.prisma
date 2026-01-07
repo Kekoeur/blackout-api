@@ -1,0 +1,245 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model PhotoSubmission {
+  id            String              @id @default(uuid())
+  userId        String
+  barId         String
+  photoUrl      String
+  status        PhotoStatus         @default(PENDING)
+  validatedAt   DateTime?
+  rejectedAt    DateTime?
+  createdAt     DateTime            @default(now())
+
+  user          User                @relation(fields: [userId], references: [id])
+  bar           Bar                 @relation(fields: [barId], references: [id])
+  
+  items         PhotoSubmissionItem[]
+}
+
+model PhotoSubmissionItem {
+  id                  String            @id @default(uuid())
+  photoSubmissionId   String
+  drinkId             String
+  friendId            String?           // null = moi, 'guest' = invité
+  
+  photoSubmission     PhotoSubmission   @relation(fields: [photoSubmissionId], references: [id])
+  drink               Drink             @relation(fields: [drinkId], references: [id])
+  friend              Friend?           @relation(fields: [friendId], references: [id])
+}
+
+enum PhotoStatus {
+  PENDING
+  VALIDATED
+  REJECTED
+}
+
+model Friend {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  linkedUserId String? // Pour lier plus tard à un vrai compte
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id])
+  linkedUser  User?    @relation("LinkedFriends", fields: [linkedUserId], references: [id])
+  
+  orderItemAssignments OrderItemAssignment[]
+  photoSubmissionItems PhotoSubmissionItem[]
+}
+
+model OrderItemAssignment {
+  id          String    @id @default(uuid())
+  orderItemId String
+  friendId    String?   // Peut être null = c'est pour soi-même
+  userId      String    // L'user qui a commandé
+  
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
+  friend      Friend?   @relation(fields: [friendId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  username      String         @unique
+  password      String
+  avatar        String?
+  bio           String?
+  friendCode    String         @unique
+  createdAt     DateTime       @default(now())
+  
+
+  consumptions  Consumption[]
+  ratings       Rating[]
+  orders        Order[]
+
+  friends           Friend[]
+  linkedFriends     Friend[] @relation("LinkedFriends")
+  orderAssignments  OrderItemAssignment[]
+  photoSubmissions  PhotoSubmission[]
+
+  @@map("users")
+}
+
+model Drink {
+  id            String         @id @default(uuid())
+  name          String
+  type          DrinkType
+  alcoholLevel  Float
+  ingredients   String[]
+  description   String?
+  imageUrl      String
+  createdAt     DateTime       @default(now())
+
+  menuDrinks    MenuDrink[]
+  consumptions  Consumption[]
+  ratings       Rating[]
+  orderItems    OrderItem[]
+  photoSubmissionItems PhotoSubmissionItem[]
+}
+
+enum DrinkType {
+  SHOOTER
+  COCKTAIL
+}
+
+model MenuDrink {
+  id            String         @id @default(uuid())
+  barId         String
+  drinkId       String
+  price         Float
+  available     Boolean        @default(true)
+
+  bar           Bar            @relation(fields: [barId], references: [id])
+  drink         Drink          @relation(fields: [drinkId], references: [id])
+
+  @@unique([barId, drinkId])
+}
+
+model Order {
+  id            String         @id @default(uuid())
+  userId        String
+  barId         String
+  status        OrderStatus    @default(PENDING)
+  photoUrl      String?
+  photoTakenAt  DateTime?
+  validatedAt   DateTime?
+  createdAt     DateTime       @default(now())
+
+  user          User           @relation(fields: [userId], references: [id])
+  bar           Bar            @relation(fields: [barId], references: [id])
+  items         OrderItem[]
+  consumptions  Consumption[]
+}
+
+enum OrderStatus {
+  PENDING       // En attente préparation
+  VALIDATED     // Validé
+  CANCELLED     // Annulé (timeout photo)
+}
+
+model OrderItem {
+  id            String         @id @default(uuid())
+  orderId       String
+  drinkId       String
+
+  order         Order          @relation(fields: [orderId], references: [id])
+  drink         Drink          @relation(fields: [drinkId], references: [id])
+
+  assignments OrderItemAssignment[]
+}
+
+model Consumption {
+  id            String         @id @default(uuid())
+  userId        String
+  barId         String
+  drinkId       String
+  orderId       String?        
+  photoUrl      String?        
+  validatedAt   DateTime
+  createdAt     DateTime       @default(now())
+
+  user          User           @relation(fields: [userId], references: [id])
+  bar           Bar            @relation(fields: [barId], references: [id])
+  drink         Drink          @relation(fields: [drinkId], references: [id])
+  order         Order?         @relation(fields: [orderId], references: [id])
+}
+
+model Rating {
+  id        String   @id @default(uuid())
+  rating    Int
+  comment   String?
+
+  userId    String
+  drinkId   String
+
+  user      User     @relation(fields: [userId], references: [id])
+  drink     Drink    @relation(fields: [drinkId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, drinkId])
+}
+
+// Bar Dashboard
+
+model BarUser {
+  id          String      @id @default(uuid())
+  email       String      @unique
+  password    String      // Hashé avec bcrypt
+  name        String
+  createdAt   DateTime    @default(now())
+  
+  barAccess   BarUserAccess[]
+  
+  @@map("bar_users")
+}
+
+model BarUserAccess {
+  id        String      @id @default(uuid())
+  barUserId String
+  barId     String
+  role      BarRole
+  createdAt DateTime    @default(now())
+  
+  barUser   BarUser     @relation(fields: [barUserId], references: [id], onDelete: Cascade)
+  bar       Bar         @relation(fields: [barId], references: [id], onDelete: Cascade)
+  
+  @@unique([barUserId, barId])
+  @@map("bar_user_access")
+}
+
+enum BarRole {
+  OWNER       // Propriétaire - Tous les droits
+  MANAGER     // Gérant - Gestion quotidienne
+  STAFF       // Staff - Validation des commandes uniquement
+  VIEWER      // Lecture seule - Analytics
+}
+
+
+model Bar {
+  id            String         @id @default(uuid())
+  name          String
+  city          String
+  address       String
+  apiKey        String         @unique  // Simple auth MVP
+  qrCode        String         @unique  // URL QR code
+  createdAt     DateTime       @default(now())
+
+  ownerId       String?        
+  active        Boolean        @default(true)
+
+  drinks        MenuDrink[]
+  consumptions  Consumption[]
+  orders        Order[]
+  photoSubmissions  PhotoSubmission[]
+
+  userAccess    BarUserAccess[]
+}
