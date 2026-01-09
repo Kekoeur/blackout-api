@@ -1,15 +1,17 @@
 // apps/client-api/src/bar-management/bar-management.service.ts
 
-import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { InvitationService } from './invitation.service';
 
 @Injectable()
 export class BarManagementService {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
+    private invitationService: InvitationService
   ) {}
 
   // ⭐ AUTHENTIFICATION
@@ -41,6 +43,7 @@ export class BarManagementService {
         id: barUser.id,
         email: barUser.email,
         name: barUser.name,
+        isSuperAdmin: barUser.isSuperAdmin,
         bars: barUser.barAccess.map(access => ({
           id: access.bar.id,
           name: access.bar.name,
@@ -308,6 +311,271 @@ export class BarManagementService {
       pendingOrders,
       pendingPhotos,
       topDrinks: topDrinksWithNames, // ⭐ Avec les noms des drinks
+    };
+  }
+
+  // apps/client-api/src/bar-management/bar-management.service.ts
+
+  async registerWithInvitation(token: string, name: string, password: string) {
+    // Vérifier le token
+    const invitation = await this.invitationService.verifyInvitation(token);
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Créer l'utilisateur
+    const user = await this.prisma.barUser.create({
+      data: {
+        email: invitation.email,
+        name,
+        password: hashedPassword,
+        isSuperAdmin: false,
+      },
+    });
+
+    // Utiliser l'invitation
+    await this.invitationService.useInvitation(token, user.id);
+
+    // Générer le JWT
+    const jwtToken = this.jwt.sign({
+      sub: user.id,
+      email: user.email,
+      type: 'bar-dashboard',
+    });
+
+    return {
+      token: jwtToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        bars: [
+          {
+            id: invitation.barId,
+            name: invitation.barName,
+            role: invitation.role,
+          },
+        ],
+      },
+    };
+  }
+
+  async getBarMembers(userId: string, barId: string) {
+    // Vérifier que le user est OWNER
+    await this.checkPermission(userId, barId, 'OWNER');
+
+    return this.prisma.barUserAccess.findMany({
+      where: { barId },
+      include: {
+        barUser: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: [
+        { role: 'desc' },
+        { createdAt: 'asc' },
+      ],
+    });
+  }
+
+  async getBarInvitations(userId: string, barId: string) {
+    // Vérifier que le user est OWNER
+    await this.checkPermission(userId, barId, 'OWNER');
+
+    return this.prisma.invitationToken.findMany({
+      where: {
+        barId,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+
+  async removeMember(ownerId: string, barId: string, userId: string) {
+    // Vérifier que le owner a les permissions
+    await this.checkPermission(ownerId, barId, 'OWNER');
+
+    // Ne pas permettre de supprimer un OWNER
+    const targetAccess = await this.prisma.barUserAccess.findUnique({
+      where: {
+        barUserId_barId: {
+          barUserId: userId,
+          barId,
+        },
+      },
+    });
+
+    if (targetAccess?.role === 'OWNER') {
+      throw new ForbiddenException('Cannot remove owner');
+    }
+
+    return this.prisma.barUserAccess.delete({
+      where: {
+        barUserId_barId: {
+          barUserId: userId,
+          barId,
+        },
+      },
+    });
+  }
+
+  async getBarTeam(barId: string) {
+    return this.prisma.barUserAccess.findMany({
+      where: { barId },
+      include: {
+        barUser: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            createdAt: true,
+            _count: {
+              select: {
+                createdDrinks: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [
+        { role: 'desc' },
+        { createdAt: 'asc' },
+      ],
+    });
+  }
+
+  async changeUserRole(
+    userId: string,
+    barId: string,
+    newRole: 'VIEWER' | 'STAFF' | 'MANAGER',
+  ) {
+    const access = await this.prisma.barUserAccess.findUnique({
+      where: {
+        barUserId_barId: {
+          barUserId: userId,
+          barId,
+        },
+      },
+    });
+
+    if (!access) {
+      throw new BadRequestException('User does not have access to this bar');
+    }
+
+    if (access.role === 'OWNER') {
+      throw new ForbiddenException('Cannot change owner role');
+    }
+
+    return this.prisma.barUserAccess.update({
+      where: {
+        barUserId_barId: {
+          barUserId: userId,
+          barId,
+        },
+      },
+      data: {
+        role: newRole,
+      },
+    });
+  }
+
+  async removeUserFromBar(userId: string, barId: string) {
+    const access = await this.prisma.barUserAccess.findUnique({
+      where: {
+        barUserId_barId: {
+          barUserId: userId,
+          barId,
+        },
+      },
+    });
+
+    if (!access) {
+      throw new BadRequestException('User does not have access to this bar');
+    }
+
+    if (access.role === 'OWNER') {
+      throw new ForbiddenException('Cannot remove owner from bar');
+    }
+
+    await this.prisma.barUserAccess.delete({
+      where: {
+        barUserId_barId: {
+          barUserId: userId,
+          barId,
+        },
+      },
+    });
+
+    return { success: true };
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    const user = await this.prisma.barUser.findFirst({
+      where: {
+        resetToken: token,
+        resetTokenExpiry: {
+          gte: new Date(),
+        },
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    const bcrypt = await import('bcrypt');
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.barUser.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        resetToken: null,
+        resetTokenExpiry: null,
+      },
+    });
+
+    console.log(`✅ Password reset for ${user.email}`);
+
+    return { success: true };
+  }
+
+  async activateBar(userId: string, barId: string) {
+    // Vérifier que l'utilisateur est OWNER du bar
+    const access = await this.prisma.barUserAccess.findUnique({
+      where: {
+        barUserId_barId: {
+          barUserId: userId,
+          barId,
+        },
+      },
+    });
+
+    if (!access || access.role !== 'OWNER') {
+      throw new ForbiddenException('Only bar owners can activate their bar');
+    }
+
+    // Activer le bar
+    const bar = await this.prisma.bar.update({
+      where: { id: barId },
+      data: { active: true },
+    });
+
+    console.log(`✅ Bar "${bar.name}" activated by owner ${userId}`);
+
+    return {
+      success: true,
+      bar: {
+        id: bar.id,
+        name: bar.name,
+        active: bar.active,
+      },
     };
   }
 }

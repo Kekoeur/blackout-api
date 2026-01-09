@@ -15,6 +15,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto) {
+    console.log('📦 BODY REÇU:', dto);
     return this.auth.login(dto.email, dto.password);
   }
 }

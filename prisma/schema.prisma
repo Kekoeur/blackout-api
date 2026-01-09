@@ -93,11 +93,17 @@ model Drink {
   id            String         @id @default(uuid())
   name          String
   type          DrinkType
-  alcoholLevel  Float
+  alcoholLevel  Float?
   ingredients   String[]
   description   String?
   imageUrl      String
+  barId         String?
+  isPublic      Boolean        @default(false)
+  createdBy     String?
   createdAt     DateTime       @default(now())
+
+  creator       BarUser?       @relation("DrinkCreator", fields: [createdBy], references: [id])
+  bar           Bar?           @relation("BarDrinks", fields: [barId], references: [id])
 
   menuDrinks    MenuDrink[]
   consumptions  Consumption[]
@@ -196,9 +202,13 @@ model BarUser {
   email       String      @unique
   password    String      // Hashé avec bcrypt
   name        String
+  isSuperAdmin Boolean    @default(false)
+  resetToken  String?
+  resetTokenExpiry DateTime?
   createdAt   DateTime    @default(now())
   
   barAccess   BarUserAccess[]
+  createdDrinks Drink[]   @relation("DrinkCreator")
   
   @@map("bar_users")
 }
@@ -218,6 +228,7 @@ model BarUserAccess {
 }
 
 enum BarRole {
+  SUPER_ADMIN
   OWNER       // Propriétaire - Tous les droits
   MANAGER     // Gérant - Gestion quotidienne
   STAFF       // Staff - Validation des commandes uniquement
@@ -232,15 +243,33 @@ model Bar {
   address       String
   apiKey        String         @unique  // Simple auth MVP
   qrCode        String         @unique  // URL QR code
+  ownerId       String?
+  active        Boolean        @default(false)
   createdAt     DateTime       @default(now())
 
-  ownerId       String?        
-  active        Boolean        @default(true)
+  drinks        Drink[]        @relation("BarDrinks")
+  invitations   InvitationToken[]
 
-  drinks        MenuDrink[]
+  menuDrinks    MenuDrink[]
   consumptions  Consumption[]
   orders        Order[]
   photoSubmissions  PhotoSubmission[]
 
   userAccess    BarUserAccess[]
+}
+
+model InvitationToken {
+  id          String      @id @default(uuid())
+  token       String      @unique
+  email       String
+  barId       String
+  role        BarRole
+  createdBy   String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime    @default(now())
+  
+  bar         Bar         @relation(fields: [barId], references: [id], onDelete: Cascade)
+  
+  @@map("invitation_tokens")
 }

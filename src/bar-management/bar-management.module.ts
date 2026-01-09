@@ -5,6 +5,10 @@ import { JwtModule } from '@nestjs/jwt';
 import { BarManagementController } from './bar-management.controller';
 import { BarManagementService } from './bar-management.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminController } from './admin.controller';
+import { AdminService } from './admin.service';
+import { SuperAdminGuard } from './guards/super-admin.guard';
+import { InvitationModule } from './invitation.module';
 
 @Module({
   imports: [
@@ -12,9 +16,15 @@ import { PrismaService } from '../prisma/prisma.service';
       secret: process.env.BAR_DASHBOARD_JWT_SECRET || 'bar-dashboard-secret',
       signOptions: { expiresIn: '7d' },
     }),
+    InvitationModule,
   ],
-  controllers: [BarManagementController],
-  providers: [BarManagementService, PrismaService],
-  exports: [BarManagementService],
+  controllers: [BarManagementController, AdminController],
+  providers: [
+    BarManagementService,
+    PrismaService,
+    AdminService,
+    SuperAdminGuard,
+  ],
+  exports: [BarManagementService, AdminService],
 })
 export class BarManagementModule {}
