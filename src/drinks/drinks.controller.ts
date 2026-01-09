@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CurrentBarUser } from 'src/bar-management/decorators/current-bar-user.decorator';
 import { DrinksService } from './drinks.service';
 import { BarDashboardAuthGuard } from 'src/bar-management/guards/bar-dashboard-auth.guard';
 
@@ -37,8 +38,32 @@ export class DrinksController {
 
   @Get('catalog/all')
   @UseGuards(BarDashboardAuthGuard)
-  async getAllDrinks() {
-    return this.drinks.getAllDrinksForSelection();
+  async getAllDrinks(
+    @CurrentBarUser() user: any,
+    @Query('barId') barId?: string, // ⭐ barId obligatoire
+  ) {
+    if (!barId) {
+      return this.drinks.getAllDrinksForUser(user.id);
+    }
+
+    return this.drinks.getAllDrinksForSelection(user.id, barId);
+  }
+
+  @Put('catalog/:drinkId')
+  @UseGuards(BarDashboardAuthGuard)
+  async updateDrink(
+    @CurrentBarUser() user: any,
+    @Param('drinkId') drinkId: string,
+    @Body() body: {
+      name?: string;
+      type?: 'SHOOTER' | 'COCKTAIL';
+      alcoholLevel?: number;
+      ingredients?: string[];
+      description?: string;
+      imageUrl?: string;
+    },
+  ) {
+    return this.drinks.updateDrink(user.id, drinkId, body);
   }
 
   @Post('menu/:barId')
@@ -71,15 +96,17 @@ export class DrinksController {
 
   @Post('catalog')
   @UseGuards(BarDashboardAuthGuard)
-  async createDrink(@Body() body: {
+  async createDrink(@CurrentBarUser() barUser: any, @Body() body: {
+    barId: string;
     name: string;
     type: 'SHOOTER' | 'COCKTAIL';
-    alcoholLevel: number;
-    ingredients: string[];
+    alcoholLevel?: number;
+    ingredients?: string[];
     description?: string;
     imageUrl: string;
+    isPublic?: boolean;
   }) {
-    return this.drinks.createDrink(body);
+    return this.drinks.createDrink(barUser.id, body.barId, body);
   }
 
   @Delete('catalog/:id')

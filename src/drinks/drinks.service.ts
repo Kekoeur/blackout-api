@@ -1,6 +1,6 @@
 // apps/client-api/src/drinks/drinks.service.ts
 
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -244,25 +244,55 @@ export class DrinksService {
     });
   }
 
-  async getAllDrinksForSelection() {
+  async getAllDrinksForSelection(barUserId: string, barId: string) {
     // Retourner tous les drinks pour la sélection dans le dashboard
+    const access = await this.prisma.barUserAccess.findUnique({
+      where: {
+        barUserId_barId: {
+          barUserId,
+          barId,
+        },
+      },
+    });
+
+    if (!access) {
+      throw new ForbiddenException('No access to this bar');
+    }
+    
     return this.prisma.drink.findMany({
+      where: {
+        OR: [
+          { isPublic: true },
+          { barId }
+        ],
+      },
       orderBy: {
         name: 'asc',
       },
     });
   }
 
-  async createDrink(data: {
+  async createDrink(barUserId: string, barId: string, data: {
     name: string;
     type: 'SHOOTER' | 'COCKTAIL';
-    alcoholLevel: number;
-    ingredients: string[];
+    alcoholLevel?: number;
+    ingredients?: string[];
     description?: string;
     imageUrl: string;
+    isPublic?: boolean;
   }) {
     return this.prisma.drink.create({
-      data,
+      data: {
+        name: data.name,
+        type: data.type,
+        alcoholLevel: data.alcoholLevel ?? null,           // null pour la DB
+        ingredients: data.ingredients ?? [],               // [] pour la DB
+        description: data.description ?? null,
+        imageUrl: data.imageUrl,
+        createdBy: barUserId,
+        barId,
+        isPublic: data.isPublic || false,
+      }
     });
   }
 
@@ -280,6 +310,78 @@ export class DrinksService {
 
     return this.prisma.drink.delete({
       where: { id },
+    });
+  }
+
+  async getAllDrinksForUser(barUserId: string) {
+    // Récupérer tous les bars de l'utilisateur
+    const userBars = await this.prisma.barUserAccess.findMany({
+      where: { barUserId },
+      select: { barId: true },
+    });
+
+    const barIds = userBars.map(access => access.barId);
+
+    // Retourner les drinks publics + drinks de tous les bars de l'user
+    return this.prisma.drink.findMany({
+      where: {
+        OR: [
+          { isPublic: true },
+          { barId: { in: barIds } },
+        ],
+      },
+      orderBy: {
+        name: 'asc',
+      },
+    });
+  }
+
+  async updateDrink(
+    barUserId: string,
+    drinkId: string,
+    data: {
+      name?: string;
+      type?: 'SHOOTER' | 'COCKTAIL';
+      alcoholLevel?: number;
+      ingredients?: string[];
+      description?: string;
+      imageUrl?: string;
+    },
+  ) {
+    // Vérifier que le drink existe
+    const drink = await this.prisma.drink.findUnique({
+      where: { id: drinkId },
+    });
+
+    if (!drink) {
+      throw new BadRequestException('Drink not found');
+    }
+
+    // Vérifier que l'utilisateur a créé ce drink OU a accès au bar
+    const hasAccess = drink.createdBy === barUserId || 
+      (drink.barId && await this.prisma.barUserAccess.findFirst({
+        where: {
+          barUserId,
+          barId: drink.barId,
+          role: { in: ['OWNER', 'MANAGER'] }, // Seuls OWNER et MANAGER peuvent modifier
+        },
+      }));
+
+    if (!hasAccess) {
+      throw new ForbiddenException('You do not have permission to update this drink');
+    }
+
+    // Mettre à jour le drink
+    return this.prisma.drink.update({
+      where: { id: drinkId },
+      data: {
+        ...(data.name && { name: data.name }),
+        ...(data.type && { type: data.type }),
+        ...(data.alcoholLevel !== undefined && { alcoholLevel: data.alcoholLevel }),
+        ...(data.ingredients !== undefined && { ingredients: data.ingredients }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.imageUrl && { imageUrl: data.imageUrl }),
+      },
     });
   }
 }
