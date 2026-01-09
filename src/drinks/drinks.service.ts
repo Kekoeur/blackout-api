@@ -7,6 +7,44 @@ import { PrismaService } from '../prisma/prisma.service';
 export class DrinksService {
   constructor(private prisma: PrismaService) {}
 
+  private async checkPermission(
+    barUserId: string,
+    barId: string,
+    minRole: 'VIEWER' | 'STAFF' | 'MANAGER' | 'OWNER',
+  ) {
+    const access = await this.prisma.barUserAccess.findUnique({
+      where: {
+        barUserId_barId: {
+          barUserId,
+          barId,
+        },
+      },
+    });
+
+    if (!access) {
+      throw new ForbiddenException('No access to this bar');
+    }
+
+    // Hiérarchie des rôles
+    const roleHierarchy = {
+      VIEWER: 0,
+      STAFF: 1,
+      MANAGER: 2,
+      OWNER: 3,
+    };
+
+    const userRoleLevel = roleHierarchy[access.role];
+    const minRoleLevel = roleHierarchy[minRole];
+
+    if (userRoleLevel < minRoleLevel) {
+      throw new ForbiddenException(
+        `This action requires at least ${minRole} role`,
+      );
+    }
+
+    return access;
+  }
+
   async findAll(userId?: string) {
     console.log('🔍 findAll drinks, userId:', userId);
 
@@ -178,8 +216,63 @@ export class DrinksService {
     });
   }
 
-  async addDrinkToMenu(barId: string, drinkId: string, price: number) {
+  async addDrinksToMenuBulk(
+    barUserId: string,
+    barId: string,
+    drinks: Array<{ drinkId: string; price: number }>,
+  ) {
+    // Vérifier que l'utilisateur a accès au bar
+    await this.checkPermission(barUserId, barId, 'MANAGER');
+
+    // Vérifier que les drinks existent
+    const drinkIds = drinks.map(d => d.drinkId);
+    const existingDrinks = await this.prisma.drink.findMany({
+      where: { id: { in: drinkIds } },
+      select: { id: true },
+    });
+
+    if (existingDrinks.length !== drinkIds.length) {
+      throw new BadRequestException('Some drinks do not exist');
+    }
+
+    // Vérifier qu'ils ne sont pas déjà dans le menu
+    const existingMenuDrinks = await this.prisma.menuDrink.findMany({
+      where: {
+        barId,
+        drinkId: { in: drinkIds },
+      },
+    });
+
+    if (existingMenuDrinks.length > 0) {
+      throw new BadRequestException('Some drinks are already in the menu');
+    }
+
+    // Ajouter tous les drinks au menu
+    const menuDrinks = await this.prisma.$transaction(
+      drinks.map(drink => 
+        this.prisma.menuDrink.create({
+          data: {
+            barId,
+            drinkId: drink.drinkId,
+            price: drink.price,
+            available: true,
+          },
+        })
+      )
+    );
+
+    console.log(`✅ Added ${menuDrinks.length} drinks to menu of bar ${barId}`);
+
+    return {
+      success: true,
+      added: menuDrinks.length,
+    };
+  }
+
+  async addDrinkToMenu(barUserId: string, barId: string, drinkId: string, price: number) {
     // Vérifier si le drink existe
+    await this.checkPermission(barUserId, barId, 'MANAGER');
+
     const drink = await this.prisma.drink.findUnique({
       where: { id: drinkId },
     });
@@ -233,7 +326,9 @@ export class DrinksService {
     });
   }
 
-  async removeDrinkFromMenu(barId: string, drinkId: string) {
+  async removeDrinkFromMenu(barUserId: string, barId: string, drinkId: string) {
+    await this.checkPermission(barUserId, barId, 'MANAGER');
+    
     return this.prisma.menuDrink.delete({
       where: {
         barId_drinkId: {

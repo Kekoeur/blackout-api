@@ -69,10 +69,11 @@ export class DrinksController {
   @Post('menu/:barId')
   @UseGuards(BarDashboardAuthGuard)
   async addDrinkToMenu(
+    @CurrentBarUser() user: any,
     @Param('barId') barId: string,
     @Body() body: { drinkId: string; price: number },
   ) {
-    return this.drinks.addDrinkToMenu(barId, body.drinkId, body.price);
+    return this.drinks.addDrinkToMenu(user.id, barId, body.drinkId, body.price);
   }
 
   @Put('menu/:barId/:drinkId')
@@ -88,10 +89,11 @@ export class DrinksController {
   @Delete('menu/:barId/:drinkId')
   @UseGuards(BarDashboardAuthGuard)
   async removeDrinkFromMenu(
+    @CurrentBarUser() user: any,
     @Param('barId') barId: string,
     @Param('drinkId') drinkId: string,
   ) {
-    return this.drinks.removeDrinkFromMenu(barId, drinkId);
+    return this.drinks.removeDrinkFromMenu(user.id, barId, drinkId);
   }
 
   @Post('catalog')
@@ -113,5 +115,17 @@ export class DrinksController {
   @UseGuards(BarDashboardAuthGuard)
   async deleteDrink(@Param('id') id: string) {
     return this.drinks.deleteDrink(id);
+  }
+
+  @Post('menu/:barId/bulk')
+  @UseGuards(BarDashboardAuthGuard)
+  async addDrinksBulk(
+    @CurrentBarUser() user: any,
+    @Param('barId') barId: string,
+    @Body() body: {
+      drinks: Array<{ drinkId: string; price: number }>;
+    },
+  ) {
+    return this.drinks.addDrinksToMenuBulk(user.id, barId, body.drinks);
   }
 }
