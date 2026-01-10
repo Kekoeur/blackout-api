@@ -57,6 +57,7 @@ export class OrdersService {
               orderItemId: item.id,
               userId,
               friendId: assignment.friendId === 'guest' ? null : assignment.friendId,
+              friendName: assignment.friendName,
             },
           });
           console.log('✅ Assignment created for item:', item.id, 'friend:', assignment.friendName);

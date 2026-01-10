@@ -108,7 +108,12 @@ export class PhotosService {
     const submission = await this.prisma.photoSubmission.findUnique({
       where: { id: submissionId },
       include: {
-        items: true,
+        items: {
+          include: {
+            drink: true,
+            friend: true,
+          }
+        }
       },
     });
 
@@ -159,6 +164,9 @@ export class PhotosService {
           orderItemId: orderItem.id,
           userId: submission.userId,
           friendId: photoItem.friendId,
+          friendName: photoItem.friendId === null 
+          ? 'Invité' 
+          : (photoItem.friend ? photoItem.friend.name : 'Invité'),
         },
       });
       
@@ -354,6 +362,9 @@ export class PhotosService {
           orderItemId: orderItem.id,
           userId: submission.userId,
           friendId: photoItem.friendId,
+          friendName: photoItem.friendId === null 
+          ? 'Invité' 
+            : (photoItem.friend ? photoItem.friend.name : 'Invité'),
         },
       });
 

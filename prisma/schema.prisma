@@ -59,6 +59,7 @@ model OrderItemAssignment {
   id          String    @id @default(uuid())
   orderItemId String
   friendId    String?   // Peut être null = c'est pour soi-même
+  friendName  String?
   userId      String    // L'user qui a commandé
   
   orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
