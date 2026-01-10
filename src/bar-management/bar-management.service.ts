@@ -1,10 +1,13 @@
 // apps/client-api/src/bar-management/bar-management.service.ts
 
-import { Injectable, UnauthorizedException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { InvitationService } from './invitation.service';
+import { GeocodingService, GeocodeResult } from '../utils/geocoding.service';
 
 @Injectable()
 export class BarManagementService {
@@ -91,11 +94,31 @@ export class BarManagementService {
     const apiKey = `bar_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     const qrCode = JSON.stringify({ type: 'bar', barId: 'TEMP' });
 
+    console.log('🌍 Geocoding address:', data.address, data.city);
+    const geocodeResult = await GeocodingService.geocodeAddress(
+      data.address,
+      data.city,
+      'France'
+    );
+
+    let latitude: number | null = null;
+    let longitude: number | null = null;
+
+    if (geocodeResult) {
+      latitude = geocodeResult.latitude;
+      longitude = geocodeResult.longitude;
+      console.log('✅ Geocoded:', { latitude, longitude });
+    } else {
+      console.warn('⚠️ Could not geocode address, coordinates will be null');
+    }
+
     const bar = await this.prisma.bar.create({
       data: {
         name: data.name,
         city: data.city,
         address: data.address,
+        latitude,
+        longitude,
         apiKey,
         qrCode,
         ownerId: userId,
@@ -212,6 +235,31 @@ export class BarManagementService {
     });
 
     return { success: true, email };
+  }
+
+  async getBarDetails(userId: string, barId: string) {
+    // Utiliser BarUserAccess (la table de jointure) au lieu de BarUser
+    const userBarAccess = await this.prisma.barUserAccess.findUnique({
+      where: {
+        barUserId_barId: {
+          barUserId: userId,
+          barId,
+        },
+      },
+      include: {
+        bar: true, // Inclure les détails du bar
+      },
+    });
+
+    if (!userBarAccess) {
+      throw new NotFoundException('Bar not found or access denied');
+    }
+
+    // Retourner les infos du bar + le rôle de l'utilisateur
+    return {
+      ...userBarAccess.bar,
+      role: userBarAccess.role,
+    };
   }
 
   // ⭐ STATISTIQUES DU BAR
@@ -578,4 +626,123 @@ export class BarManagementService {
       },
     };
   }
-}
+
+
+  async deactivateBar(userId: string, barId: string) {
+    await this.checkPermission(userId, barId, 'OWNER');
+
+    const bar = await this.prisma.bar.update({
+      where: { id: barId },
+      data: { active: false },
+    });
+
+    return {
+      success: true,
+      message: 'Bar désactivé avec succès',
+      bar,
+    };
+  }
+
+  async geocodeBar(userId: string, barId: string): Promise<{
+    success: boolean;
+    bar: any;
+    geocode: GeocodeResult;
+  }> {
+    // Vérifier que l'user est OWNER
+    await this.checkPermission(userId, barId, 'OWNER');
+
+    // Récupérer le bar
+    const bar = await this.prisma.bar.findUnique({
+      where: { id: barId },
+      select: {
+        id: true,
+        address: true,
+        city: true,
+        latitude: true,
+        longitude: true,
+      },
+    });
+
+    if (!bar) {
+      throw new BadRequestException('Bar not found');
+    }
+
+    // Géocoder
+    console.log('🌍 Geocoding bar:', bar.id);
+    const geocodeResult = await GeocodingService.geocodeAddress(
+      bar.address,
+      bar.city,
+      'France'
+    );
+
+    if (!geocodeResult) {
+      throw new BadRequestException('Could not geocode this address');
+    }
+
+    // Mettre à jour
+    const updatedBar = await this.prisma.bar.update({
+      where: { id: barId },
+      data: {
+        latitude: geocodeResult.latitude,
+        longitude: geocodeResult.longitude,
+      },
+    });
+
+    console.log('✅ Bar geocoded:', {
+      barId: bar.id,
+      latitude: geocodeResult.latitude,
+      longitude: geocodeResult.longitude,
+    });
+
+    return {
+      success: true,
+      bar: updatedBar,
+      geocode: geocodeResult,
+    };
+  }
+
+  async updateCoordinates(
+    userId: string,
+    barId: string,
+    latitude: number,
+    longitude: number,
+  ) {
+    await this.checkPermission(userId, barId, 'OWNER');
+
+    const updatedBar = await this.prisma.bar.update({
+      where: { id: barId },
+      data: {
+        latitude: new Decimal(latitude),
+        longitude: new Decimal(longitude),
+      },
+    });
+
+    return {
+      success: true,
+      bar: updatedBar,
+    };
+  }
+
+  async updateBarAddress(
+    userId: string,
+    barId: string,
+    data: { address: string; city: string; postalCode?: string },
+  ) {
+    await this.checkPermission(userId, barId, 'OWNER');
+
+    const bar = await this.prisma.bar.update({
+      where: { id: barId },
+      data: {
+        address: data.address,
+        city: data.city,
+        ...(data.postalCode && { postalCode: data.postalCode }),
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Adresse mise à jour avec succès',
+      bar,
+    };
+  }
+  }

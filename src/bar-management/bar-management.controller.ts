@@ -47,6 +47,15 @@ export class BarManagementController {
     return this.barManagement.getMyBars(user.id);
   }
 
+  @Get('bars/:barId')
+  @UseGuards(BarDashboardAuthGuard)
+  async getBarDetails(
+    @CurrentBarUser() user: any,
+    @Param('barId') barId: string,
+  ) {
+    return this.barManagement.getBarDetails(user.id, barId);
+  }
+
   @Get('bars/:barId/stats')
   @UseGuards(BarDashboardAuthGuard)
   async getBarStats(
@@ -171,4 +180,42 @@ export class BarManagementController {
   ) {
     return this.barManagement.activateBar(user.id, barId);
   }
+
+  @Patch('bars/:barId/deactivate')
+  @UseGuards(BarDashboardAuthGuard)
+  async deactivateBar(
+    @CurrentBarUser() user: any,
+    @Param('barId') barId: string,
+  ) {
+    return this.barManagement.deactivateBar(user.id, barId);
+  }
+
+  @Patch('bars/:barId/geocode')
+  @UseGuards(BarDashboardAuthGuard)
+  async geocodeBar(
+    @CurrentBarUser() user: any,
+    @Param('barId') barId: string,
+  ) {
+    return this.barManagement.geocodeBar(user.id, barId);
+  }
+
+  @Patch('bars/:barId/coordinates')
+  @UseGuards(BarDashboardAuthGuard)
+  async updateCoordinates(
+    @CurrentBarUser() user: any,
+    @Param('barId') barId: string,
+    @Body() body: { latitude: number; longitude: number },
+  ) {
+    return this.barManagement.updateCoordinates(user.id, barId, body.latitude, body.longitude);
+  }
+
+  @Patch('bars/:barId/address')
+  @UseGuards(BarDashboardAuthGuard)
+  async updateBarAddress(
+    @CurrentBarUser() user: any,
+    @Param('barId') barId: string,
+    @Body() body: { address: string; city: string; postalCode?: string },
+  ) {
+    return this.barManagement.updateBarAddress(user.id, barId, body);
+}
 }
