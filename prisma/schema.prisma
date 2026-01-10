@@ -241,6 +241,8 @@ model Bar {
   name          String
   city          String
   address       String
+  latitude      Decimal?       @db.Decimal(10, 7)
+  longitude     Decimal?       @db.Decimal(10, 7)
   apiKey        String         @unique  // Simple auth MVP
   qrCode        String         @unique  // URL QR code
   ownerId       String?
