@@ -12,6 +12,7 @@ import { BarsModule } from './bars/bars.module';
 import { FriendsModule } from './friends/friends.module';
 import { BarManagementModule } from './bar-management/bar-management.module';
 import { EventsGateway } from './events/events.gateway';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -26,7 +27,8 @@ import { EventsGateway } from './events/events.gateway';
     PhotosModule,
     BarsModule,
     FriendsModule,
-    BarManagementModule
+    BarManagementModule,
+    AdminModule
   ],
   providers: [EventsGateway],
 })
