@@ -5,6 +5,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MulterModule } from '@nestjs/platform-express';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthModule } from 'src/auth/auth.module';
+import { PhotoModerationService } from './services/photo-moderation.service';
+import { GoogleVisionModerationProvider } from './providers/google-vision-moderation.provider';
+import { AWSRekognitionModerationProvider } from './providers/aws-rekognition-moderation.provider';
+import { NSFWJSModerationProvider } from './providers/nsfwjs-moderation.provider';
 
 @Module({
   imports: [
@@ -18,7 +22,14 @@ import { AuthModule } from 'src/auth/auth.module';
     }),
   ],
   controllers: [PhotosController],
-  providers: [PhotosService, PrismaService],
-  exports: [PhotosService]
+  providers: [
+    PhotosService,
+    PrismaService,
+    PhotoModerationService,
+    GoogleVisionModerationProvider,
+    AWSRekognitionModerationProvider,
+    NSFWJSModerationProvider,
+  ],
+  exports: [PhotosService, PhotoModerationService]
 })
 export class PhotosModule {}

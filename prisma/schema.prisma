@@ -9,18 +9,20 @@ datasource db {
 }
 
 model PhotoSubmission {
-  id            String              @id @default(uuid())
-  userId        String
-  barId         String
-  photoUrl      String
-  status        PhotoStatus         @default(PENDING)
-  validatedAt   DateTime?
-  rejectedAt    DateTime?
-  createdAt     DateTime            @default(now())
+  id               String              @id @default(uuid())
+  userId           String
+  barId            String
+  photoUrl         String
+  status           PhotoStatus         @default(PENDING)
+  validatedAt      DateTime?
+  rejectedAt       DateTime?
+  rejectionReason  String?             // Raison du rejet (NSFW_AUTO, NSFW_MANUAL, OTHER)
+  moderatorComment String?             // Commentaire du barman/modérateur
+  createdAt        DateTime            @default(now())
 
   user          User                @relation(fields: [userId], references: [id])
   bar           Bar                 @relation(fields: [barId], references: [id])
-  
+
   items         PhotoSubmissionItem[]
 }
 
@@ -75,8 +77,9 @@ model User {
   avatar        String?
   bio           String?
   friendCode    String         @unique
+  nsfwFlagCount Int            @default(0)  // Compteur de flags pour contenu explicite
   createdAt     DateTime       @default(now())
-  
+
 
   consumptions  Consumption[]
   ratings       Rating[]
@@ -86,8 +89,22 @@ model User {
   linkedFriends     Friend[] @relation("LinkedFriends")
   orderAssignments  OrderItemAssignment[]
   photoSubmissions  PhotoSubmission[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
 }
 
 model Drink {

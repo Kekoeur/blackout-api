@@ -50,12 +50,20 @@ export class DrinksService {
 
     const drinks = await this.prisma.drink.findMany({
       include: {
+        bar: {
+          select: {
+            id: true,
+            name: true,
+            city: true,
+            address: true,
+          },
+        },
         // ⭐ AJOUTER : Note de l'utilisateur
         ratings: userId ? {
           where: { userId },
-          select: { 
+          select: {
             id: true,
-            rating: true, 
+            rating: true,
             comment: true,
             createdAt: true,
           },
@@ -73,7 +81,7 @@ export class DrinksService {
                     some: {
                       OR: [
                         { userId, friendId: null }, // Assigné à moi-même directement
-                        { 
+                        {
                           friend: {
                             linkedUserId: userId, // Assigné à un ami qui est lié à mon compte
                           },
@@ -376,6 +384,12 @@ export class DrinksService {
     imageUrl: string;
     isPublic?: boolean;
   }) {
+    // Vérifier si le barUser existe avant de l'utiliser comme createdBy
+    const barUserExists = await this.prisma.barUser.findUnique({
+      where: { id: barUserId },
+      select: { id: true },
+    });
+
     return this.prisma.drink.create({
       data: {
         name: data.name,
@@ -384,7 +398,7 @@ export class DrinksService {
         ingredients: data.ingredients ?? [],               // [] pour la DB
         description: data.description ?? null,
         imageUrl: data.imageUrl,
-        createdBy: barUserId,
+        createdBy: barUserExists ? barUserId : null,       // null si l'utilisateur n'existe pas
         barId,
         isPublic: data.isPublic || false,
       }

@@ -1,22 +1,21 @@
 // apps/client-api/src/bar-management/admin.controller.ts
 
-import { 
-  Controller, 
-  Get, 
-  Post, 
-  Put, 
-  Delete, 
-  Body, 
-  Param, 
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
   UseGuards,
   Patch,
 } from '@nestjs/common';
-import { BarDashboardAuthGuard } from './guards/bar-dashboard-auth.guard';
-import { SuperAdminGuard } from './guards/super-admin.guard';
+import { AdminDashboardAuthGuard } from '../auth/guards/admin-dashboard-auth.guard';
 import { AdminService } from './admin.service';
 
 @Controller('admin')
-@UseGuards(BarDashboardAuthGuard, SuperAdminGuard)
+@UseGuards(AdminDashboardAuthGuard)
 export class AdminController {
   constructor(private adminService: AdminService) {}
 
