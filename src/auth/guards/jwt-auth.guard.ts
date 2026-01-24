@@ -1,41 +1,34 @@
 // apps/client-api/src/auth/jwt-auth.guard.ts
 
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { Injectable } from '@nestjs/common';
+import { BaseTokenAuthGuard } from './base-token-auth.guard';
+import { TokenPayload, TokenType } from '../interfaces/token-payload.interface';
 
+/**
+ * JWT authentication guard for general API requests (mobile client).
+ * Validates Bearer tokens using CLIENT_MOBILE_JWT_SECRET and attaches user info to request.
+ *
+ * @throws UnauthorizedException if token is missing or invalid
+ */
 @Injectable()
-export class JwtAuthGuard implements CanActivate {
-  constructor(private jwt: JwtService) {}
+export class JwtAuthGuard extends BaseTokenAuthGuard {
+  protected getSecret(): string {
+    return process.env.CLIENT_MOBILE_JWT_SECRET || '';
+  }
 
-  canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    const token = request.headers.authorization?.replace('Bearer ', '');
+  protected getExpectedTokenType(): TokenType {
+    return TokenType.CLIENT_MOBILE;
+  }
 
-    console.log('🔐 [JwtAuthGuard] Token received:', token ? 'YES' : 'NO'); // ⭐ DEBUG
+  protected attachUserToRequest(request: any, payload: TokenPayload): void {
+    request.user = {
+      id: payload.sub,
+      email: payload.email,
+      username: payload.username,
+    };
+  }
 
-    if (!token) {
-      console.error('❌ [JwtAuthGuard] No token provided'); // ⭐ DEBUG
-      throw new UnauthorizedException('No token provided');
-    }
-
-    try {
-      const payload = this.jwt.verify(token, {
-        secret: process.env.JWT_SECRET,
-      });
-
-      console.log('✅ [JwtAuthGuard] Token valid for user:', payload.sub); // ⭐ DEBUG
-      console.log('📦 [JwtAuthGuard] Full payload:', payload);
-
-      request.user = {
-        id: payload.sub,
-        email: payload.email,
-        username: payload.username,
-      };
-      console.log('✅ [JwtAuthGuard] Request.user set:', request.user);
-      return true;
-    } catch (error) {
-      console.error('❌ [JwtAuthGuard] Token verification failed:', error.message); // ⭐ DEBUG
-      throw new UnauthorizedException('Invalid token');
-    }
+  protected getContextName(): string {
+    return 'General API';
   }
 }

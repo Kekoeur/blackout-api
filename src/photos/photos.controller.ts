@@ -100,8 +100,8 @@ export class PhotosController {
   @UseGuards(BarDashboardAuthGuard)
   async rejectPhotoFromDashboard(
     @Param('photoId') photoId: string,
-    @Body() body: { barId: string },
+    @Body() body: { barId: string; reason?: string; comment?: string },
   ) {
-    return this.photos.rejectSubmissionByDashboard(photoId, body.barId);
+    return this.photos.rejectSubmissionByDashboard(photoId, body.barId, body.reason, body.comment);
   }
 }

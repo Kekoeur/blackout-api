@@ -1,9 +1,17 @@
-import { Injectable, ForbiddenException, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, ForbiddenException, BadRequestException, UnauthorizedException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PhotoModerationService } from './services/photo-moderation.service';
+import { ModerationStatus } from './enums/moderation.enum';
+import * as fs from 'fs';
 
 @Injectable()
 export class PhotosService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(PhotosService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private moderationService: PhotoModerationService,
+  ) {}
 
   async submitPhoto(
     userId: string,
@@ -14,7 +22,7 @@ export class PhotosService {
       friendId: string | null; // null = moi, 'guest' = invité
     }>,
   ) {
-    console.log('📸 Creating photo submission for user:', userId);
+    this.logger.log(`📸 Creating photo submission for user: ${userId}`);
 
     // Vérifier que le bar existe
     const bar = await this.prisma.bar.findUnique({
@@ -23,6 +31,55 @@ export class PhotosService {
 
     if (!bar) {
       throw new BadRequestException('Bar not found');
+    }
+
+    // 🔍 MODERATION NSFW - Vérifier le contenu de la photo AVANT de créer la soumission
+    try {
+      this.logger.log(`🔍 Checking photo content for NSFW...`);
+      const moderationResult = await this.moderationService.moderatePhoto(photoUrl);
+
+      this.logger.log(`📊 Moderation result: ${moderationResult.status} (confidence: ${moderationResult.confidence}%)`);
+      this.logger.log(`📊 Scores: Adult=${moderationResult.scores?.adult?.toFixed(1)}%, Racy=${moderationResult.scores?.racy?.toFixed(1)}%`);
+
+      if (moderationResult.status === ModerationStatus.REJECTED) {
+        this.logger.warn(`❌ Photo REJECTED by moderation: ${moderationResult.reasons.join(', ')}`);
+
+        // Supprimer le fichier uploadé
+        try {
+          if (fs.existsSync(photoUrl)) {
+            fs.unlinkSync(photoUrl);
+            this.logger.log(`🗑️ Deleted rejected photo file: ${photoUrl}`);
+          }
+        } catch (deleteError) {
+          this.logger.error(`Failed to delete rejected photo: ${deleteError.message}`);
+        }
+
+        // Incrémenter le compteur NSFW de l'utilisateur
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { nsfwFlagCount: { increment: 1 } },
+        });
+        this.logger.warn(`⚠️ User ${userId} NSFW flag count incremented`);
+
+        throw new BadRequestException({
+          message: 'Photo rejected: inappropriate content detected',
+          code: 'NSFW_CONTENT_DETECTED',
+          reasons: moderationResult.reasons,
+          scores: moderationResult.scores,
+        });
+      }
+
+      if (moderationResult.status === ModerationStatus.NEEDS_REVIEW) {
+        this.logger.warn(`⚠️ Photo needs review: ${moderationResult.reasons.join(', ')}`);
+        // On continue mais on log le warning - le bar pourra rejeter manuellement si nécessaire
+      }
+    } catch (error) {
+      // Si c'est une BadRequestException de modération, on la relance
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      // Sinon on log l'erreur mais on continue (modération optionnelle)
+      this.logger.warn(`⚠️ Moderation check failed, continuing without: ${error.message}`);
     }
 
     // Créer la soumission
@@ -66,7 +123,7 @@ export class PhotosService {
       },
     });
 
-    console.log('✅ Photo submission created:', submission.id);
+    this.logger.log(`✅ Photo submission created: ${submission.id}`);
 
     return submission;
   }
@@ -252,7 +309,9 @@ export class PhotosService {
       include: {
         user: {
           select: {
+            id: true,
             username: true,
+            nsfwFlagCount: true,
           },
         },
         items: {
@@ -268,7 +327,7 @@ export class PhotosService {
     });
   }
 
-  async rejectSubmissionByDashboard(submissionId: string, barId: string) {
+  async rejectSubmissionByDashboard(submissionId: string, barId: string, reason?: string, comment?: string) {
     console.log('❌ [Dashboard] Rejecting photo submission:', submissionId);
 
     const submission = await this.prisma.photoSubmission.findUnique({
@@ -293,8 +352,19 @@ export class PhotosService {
       data: {
         status: 'REJECTED',
         rejectedAt: new Date(),
+        rejectionReason: reason || null,
+        moderatorComment: comment || null,
       },
     });
+
+    // Si rejet pour contenu explicite, incrémenter le compteur de l'utilisateur
+    if (reason === 'NSFW_MANUAL') {
+      await this.prisma.user.update({
+        where: { id: submission.userId },
+        data: { nsfwFlagCount: { increment: 1 } },
+      });
+      this.logger.warn(`⚠️ User ${submission.userId} NSFW flag count incremented (manual flag by bar)`);
+    }
 
     console.log('✅ [Dashboard] Photo submission rejected');
 
