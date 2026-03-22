@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -19,7 +19,7 @@ export class RatingsService {
         orderItem: {
           drinkId,
           order: {
-            status: 'VALIDATED',
+            status: 'DELIVERED',
           },
         },
         OR: [
@@ -39,34 +39,39 @@ export class RatingsService {
 
     console.log('✅ User is assigned to this drink', assignedOrderItems.length, 'times');
 
-    // Supprimer l'ancienne note (si existe)
-    await this.prisma.rating.deleteMany({
-      where: {
-        userId,
-        drinkId,
-      },
-    });
+    try {
+      // Supprimer l'ancienne note (si existe)
+      await this.prisma.rating.deleteMany({
+        where: {
+          userId,
+          drinkId,
+        },
+      });
 
-    // Créer la nouvelle note
-    const rating = await this.prisma.rating.create({
-      data: {
-        userId,
-        drinkId,
-        rating: stars,
-        comment: comment || null,
-      },
-      include: {
-        drink: {
-          select: {
-            name: true,
+      // Créer la nouvelle note
+      const rating = await this.prisma.rating.create({
+        data: {
+          userId,
+          drinkId,
+          rating: stars,
+          comment: comment || null,
+        },
+        include: {
+          drink: {
+            select: {
+              name: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    console.log('✅ Rating created:', rating.id, 'for', rating.drink.name);
+      console.log('✅ Rating created:', rating.id, 'for', rating.drink.name);
 
-    return rating;
+      return rating;
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new InternalServerErrorException('Failed to save rating');
+    }
   }
 
   async getMyRatings(userId: string) {
@@ -107,15 +112,19 @@ export class RatingsService {
     });
 
     if (!rating) {
-      throw new BadRequestException('Rating not found');
+      throw new NotFoundException('Rating not found');
     }
 
-    return this.prisma.rating.update({
-      where: { id: rating.id },
-      data: {
-        rating: stars,
-        comment: comment || null,
-      },
-    });
+    try {
+      return await this.prisma.rating.update({
+        where: { id: rating.id },
+        data: {
+          rating: stars,
+          comment: comment || null,
+        },
+      });
+    } catch (error) {
+      throw new InternalServerErrorException('Failed to update rating');
+    }
   }
 }

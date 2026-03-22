@@ -22,7 +22,7 @@ export class AdminService {
       this.prisma.bar.count(),
       this.prisma.bar.count({ where: { active: true } }),
       this.prisma.barUser.count({ where: { isSuperAdmin: false } }),
-      this.prisma.order.count({ where: { status: 'VALIDATED' } }),
+      this.prisma.order.count({ where: { status: 'DELIVERED' } }),
       this.calculateTotalRevenue(),
       this.getRecentActivity(),
     ]);
@@ -40,7 +40,7 @@ export class AdminService {
 
   private async calculateTotalRevenue() {
     const validatedOrders = await this.prisma.order.findMany({
-      where: { status: 'VALIDATED' },
+      where: { status: 'DELIVERED' },
       include: {
         items: {
           include: {
@@ -76,7 +76,7 @@ export class AdminService {
 
   private async getRecentActivity() {
     const recentOrders = await this.prisma.order.findMany({
-      where: { status: 'VALIDATED' },
+      where: { status: 'DELIVERED' },
       orderBy: { validatedAt: 'desc' },
       take: 5,
       include: {
@@ -111,7 +111,7 @@ export class AdminService {
       include: {
         _count: {
           select: {
-            orders: { where: { status: 'VALIDATED' } },
+            orders: { where: { status: 'DELIVERED' } },
             photoSubmissions: true,
             menuDrinks: true,
             userAccess: true,
@@ -157,7 +157,7 @@ export class AdminService {
         },
         _count: {
           select: {
-            orders: { where: { status: 'VALIDATED' } },
+            orders: { where: { status: 'DELIVERED' } },
             photoSubmissions: true,
             menuDrinks: true,
             consumptions: true,
@@ -181,7 +181,7 @@ export class AdminService {
 
   private async calculateBarRevenue(barId: string) {
     const orders = await this.prisma.order.findMany({
-      where: { barId, status: 'VALIDATED' },
+      where: { barId, status: 'DELIVERED' },
       include: {
         items: true,
       },

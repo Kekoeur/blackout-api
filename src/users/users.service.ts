@@ -214,6 +214,29 @@ export class UsersService {
     return { success: true, linkedTo: targetUser.username };
   }
 
+  // ==================== PUSH TOKENS ====================
+
+  async savePushToken(userId: string, pushToken: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { pushToken },
+      select: {
+        id: true,
+        pushToken: true,
+      },
+    });
+  }
+
+  async removePushToken(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { pushToken: null },
+      select: {
+        id: true,
+      },
+    });
+  }
+
   async getUserStats(userId: string) {
     // Total de consommations
     const totalConsumptions = await this.prisma.consumption.count({
@@ -233,7 +256,7 @@ export class UsersService {
         ],
         orderItem: {
           order: {
-            status: 'VALIDATED',
+            status: 'DELIVERED',
           },
         },
       },
@@ -253,7 +276,7 @@ export class UsersService {
     const uniqueBars = await this.prisma.order.findMany({
       where: {
         userId,
-        status: 'VALIDATED',
+        status: 'DELIVERED',
       },
       select: {
         barId: true,

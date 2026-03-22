@@ -11,13 +11,19 @@ import { PrismaModule } from './prisma/prisma.module';
 import { BarsModule } from './bars/bars.module';
 import { FriendsModule } from './friends/friends.module';
 import { BarManagementModule } from './bar-management/bar-management.module';
-import { EventsGateway } from './events/events.gateway';
+import { EventsModule } from './events/events.module';
 import { AdminModule } from './admin/admin.module';
+import { TagsModule } from './tags/tags.module';
+import { MenusModule } from './menus/menus.module';
+import { CustomFieldsModule } from './custom-fields/custom-fields.module';
+import { PushNotificationsModule } from './push-notifications/push-notifications.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    EventsModule,
+    PushNotificationsModule,
     AuthModule,
     UsersModule,
     DrinksModule,
@@ -28,8 +34,10 @@ import { AdminModule } from './admin/admin.module';
     BarsModule,
     FriendsModule,
     BarManagementModule,
-    AdminModule
+    AdminModule,
+    TagsModule,
+    MenusModule,
+    CustomFieldsModule,
   ],
-  providers: [EventsGateway],
 })
 export class AppModule {}

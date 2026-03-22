@@ -14,6 +14,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { BarDashboardAuthGuard } from '../bar-management/guards/bar-dashboard-auth.guard';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PhotoMetadataDto } from './dto/photo-metadata.dto';
@@ -71,6 +72,7 @@ export class OrdersController {
   }
 
   @Get('bar/:barId')
+  @UseGuards(BarDashboardAuthGuard)
   async getBarOrders(
     @Param('barId') barId: string,
     @Query('status') status?: string,
@@ -79,12 +81,46 @@ export class OrdersController {
   }
 
   @Patch(':orderId/validate')
+  @UseGuards(BarDashboardAuthGuard)
   async validateOrder(@Param('orderId') orderId: string) {
     return this.orders.validateOrder(orderId);
   }
 
   @Patch(':orderId/cancel')
+  @UseGuards(BarDashboardAuthGuard)
   async cancelOrder(@Param('orderId') orderId: string) {
     return this.orders.cancelOrder(orderId);
+  }
+
+  // ==================== WORKFLOW MULTI-ÉTAPES ====================
+
+  @Get('bar/:barId/active')
+  @UseGuards(BarDashboardAuthGuard)
+  async getActiveOrders(@Param('barId') barId: string) {
+    return this.orders.getActiveOrders(barId);
+  }
+
+  @Patch(':orderId/accept')
+  @UseGuards(BarDashboardAuthGuard)
+  async acceptOrder(@Param('orderId') orderId: string) {
+    return this.orders.acceptOrder(orderId);
+  }
+
+  @Patch(':orderId/paid')
+  @UseGuards(BarDashboardAuthGuard)
+  async markAsPaid(@Param('orderId') orderId: string) {
+    return this.orders.markAsPaid(orderId);
+  }
+
+  @Patch(':orderId/delivered')
+  @UseGuards(BarDashboardAuthGuard)
+  async markAsDelivered(@Param('orderId') orderId: string) {
+    return this.orders.markAsDelivered(orderId);
+  }
+
+  @Patch(':orderId/cancel-order')
+  @UseGuards(BarDashboardAuthGuard)
+  async cancelOrderById(@Param('orderId') orderId: string) {
+    return this.orders.cancelOrderById(orderId);
   }
 }
