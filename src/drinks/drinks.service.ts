@@ -75,7 +75,7 @@ export class DrinksService {
               orderItems: {
                 where: {
                   order: {
-                    status: 'VALIDATED',
+                    status: 'DELIVERED',
                   },
                   assignments: {
                     some: {
@@ -164,7 +164,7 @@ export class DrinksService {
                   orderItems: {
                     where: {
                       order: {
-                        status: 'VALIDATED',
+                        status: 'DELIVERED',
                       },
                       assignments: {
                         some: {

@@ -8,34 +8,7 @@ datasource db {
   directUrl = env("DIRECT_DATABASE_URL")
 }
 
-model PhotoSubmission {
-  id               String              @id @default(uuid())
-  userId           String
-  barId            String
-  photoUrl         String
-  status           PhotoStatus         @default(PENDING)
-  validatedAt      DateTime?
-  rejectedAt       DateTime?
-  rejectionReason  String?             // Raison du rejet (NSFW_AUTO, NSFW_MANUAL, OTHER)
-  moderatorComment String?             // Commentaire du barman/modérateur
-  createdAt        DateTime            @default(now())
-
-  user          User                @relation(fields: [userId], references: [id])
-  bar           Bar                 @relation(fields: [barId], references: [id])
-
-  items         PhotoSubmissionItem[]
-}
-
-model PhotoSubmissionItem {
-  id                  String            @id @default(uuid())
-  photoSubmissionId   String
-  drinkId             String
-  friendId            String?           // null = moi, 'guest' = invité
-  
-  photoSubmission     PhotoSubmission   @relation(fields: [photoSubmissionId], references: [id])
-  drink               Drink             @relation(fields: [drinkId], references: [id])
-  friend              Friend?           @relation(fields: [friendId], references: [id])
-}
+// ==================== ENUMS ====================
 
 enum PhotoStatus {
   PENDING
@@ -43,31 +16,49 @@ enum PhotoStatus {
   REJECTED
 }
 
-model Friend {
-  id          String   @id @default(uuid())
-  userId      String
-  name        String
-  linkedUserId String? // Pour lier plus tard à un vrai compte
-  createdAt   DateTime @default(now())
-
-  user        User     @relation(fields: [userId], references: [id])
-  linkedUser  User?    @relation("LinkedFriends", fields: [linkedUserId], references: [id])
-  
-  orderItemAssignments OrderItemAssignment[]
-  photoSubmissionItems PhotoSubmissionItem[]
+enum DrinkType {
+  SHOOTER
+  COCKTAIL
 }
 
-model OrderItemAssignment {
-  id          String    @id @default(uuid())
-  orderItemId String
-  friendId    String?   // Peut être null = c'est pour soi-même
-  friendName  String?
-  userId      String    // L'user qui a commandé
-  
-  orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
-  friend      Friend?   @relation(fields: [friendId], references: [id])
-  user        User      @relation(fields: [userId], references: [id])
+enum OrderStatus {
+  PENDING       // Commande créée, en attente
+  ACCEPTED      // Barman a pris en charge
+  PAID          // Payée
+  DELIVERED     // Livrée
+  CANCELLED     // Annulée
 }
+
+enum BarRole {
+  SUPER_ADMIN
+  OWNER       // Propriétaire - Tous les droits
+  MANAGER     // Gérant - Gestion quotidienne
+  STAFF       // Staff - Validation des commandes uniquement
+  VIEWER      // Lecture seule - Analytics
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  BOOLEAN
+  SELECT
+}
+
+enum PeriodType {
+  DATE_RANGE
+  DAY_OF_WEEK
+  SEASON
+  MONTH
+}
+
+enum MenuConditionType {
+  COMPLETION_PERCENT
+  DAY_OF_WEEK
+  MONTH
+  SEASON
+}
+
+// ==================== USER MODELS ====================
 
 model User {
   id            String         @id @default(uuid())
@@ -77,9 +68,9 @@ model User {
   avatar        String?
   bio           String?
   friendCode    String         @unique
-  nsfwFlagCount Int            @default(0)  // Compteur de flags pour contenu explicite
+  nsfwFlagCount Int            @default(0)
+  pushToken     String?        // Token pour push notifications Expo
   createdAt     DateTime       @default(now())
-
 
   consumptions  Consumption[]
   ratings       Rating[]
@@ -107,6 +98,101 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
+model Friend {
+  id          String   @id @default(uuid())
+  userId      String
+  name        String
+  linkedUserId String?
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id])
+  linkedUser  User?    @relation("LinkedFriends", fields: [linkedUserId], references: [id])
+
+  orderItemAssignments OrderItemAssignment[]
+  photoSubmissionItems PhotoSubmissionItem[]
+}
+
+// ==================== BAR MODELS ====================
+
+model Bar {
+  id            String         @id @default(uuid())
+  name          String
+  city          String
+  address       String
+  latitude      Decimal?       @db.Decimal(10, 7)
+  longitude     Decimal?       @db.Decimal(10, 7)
+  apiKey        String         @unique
+  qrCode        String         @unique
+  ownerId       String?
+  active        Boolean        @default(false)
+  createdAt     DateTime       @default(now())
+
+  // Configuration notifications push
+  pushNotificationsEnabled Boolean @default(false)
+  notifyOnAccepted         Boolean @default(true)
+  notifyOnPaid             Boolean @default(false)
+  notifyOnDelivered        Boolean @default(true)
+
+  drinks            Drink[]           @relation("BarDrinks")
+  invitations       InvitationToken[]
+  menuDrinks        MenuDrink[]
+  consumptions      Consumption[]
+  orders            Order[]
+  photoSubmissions  PhotoSubmission[]
+  userAccess        BarUserAccess[]
+  customFields      CustomField[]
+  menus             Menu[]
+  completionChecks  MenuCondition[]   @relation("CompletionCheck")
+}
+
+model BarUser {
+  id          String      @id @default(uuid())
+  email       String      @unique
+  password    String
+  name        String
+  isSuperAdmin Boolean    @default(false)
+  resetToken  String?
+  resetTokenExpiry DateTime?
+  createdAt   DateTime    @default(now())
+
+  barAccess   BarUserAccess[]
+  createdDrinks Drink[]   @relation("DrinkCreator")
+
+  @@map("bar_users")
+}
+
+model BarUserAccess {
+  id        String      @id @default(uuid())
+  barUserId String
+  barId     String
+  role      BarRole
+  createdAt DateTime    @default(now())
+
+  barUser   BarUser     @relation(fields: [barUserId], references: [id], onDelete: Cascade)
+  bar       Bar         @relation(fields: [barId], references: [id], onDelete: Cascade)
+
+  @@unique([barUserId, barId])
+  @@map("bar_user_access")
+}
+
+model InvitationToken {
+  id          String      @id @default(uuid())
+  token       String      @unique
+  email       String
+  barId       String
+  role        BarRole
+  createdBy   String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime    @default(now())
+
+  bar         Bar         @relation(fields: [barId], references: [id], onDelete: Cascade)
+
+  @@map("invitation_tokens")
+}
+
+// ==================== DRINK & MENU MODELS ====================
+
 model Drink {
   id            String         @id @default(uuid())
   name          String
@@ -128,11 +214,7 @@ model Drink {
   ratings       Rating[]
   orderItems    OrderItem[]
   photoSubmissionItems PhotoSubmissionItem[]
-}
-
-enum DrinkType {
-  SHOOTER
-  COCKTAIL
+  tags          DrinkTag[]
 }
 
 model MenuDrink {
@@ -145,8 +227,115 @@ model MenuDrink {
   bar           Bar            @relation(fields: [barId], references: [id])
   drink         Drink          @relation(fields: [drinkId], references: [id])
 
+  availabilityPeriods AvailabilityPeriod[]
+  menuItems           MenuMenuItem[]
+
   @@unique([barId, drinkId])
 }
+
+// ==================== TAGS ====================
+
+model Tag {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  color     String?
+  createdAt DateTime   @default(now())
+
+  drinks    DrinkTag[]
+}
+
+model DrinkTag {
+  id      String @id @default(uuid())
+  drinkId String
+  tagId   String
+
+  drink   Drink  @relation(fields: [drinkId], references: [id], onDelete: Cascade)
+  tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([drinkId, tagId])
+}
+
+// ==================== CUSTOM FIELDS ====================
+
+model CustomField {
+  id           String          @id @default(uuid())
+  barId        String
+  name         String
+  type         CustomFieldType
+  options      String[]
+  required     Boolean         @default(false)
+  showOnMobile Boolean         @default(true)
+  displayOrder Int             @default(0)
+  createdAt    DateTime        @default(now())
+
+  bar          Bar             @relation(fields: [barId], references: [id], onDelete: Cascade)
+
+  @@unique([barId, name])
+}
+
+// ==================== AVAILABILITY PERIODS ====================
+
+model AvailabilityPeriod {
+  id          String     @id @default(uuid())
+  menuDrinkId String
+  periodType  PeriodType
+  startDate   DateTime?
+  endDate     DateTime?
+  daysOfWeek  Int[]
+  season      String?
+  months      Int[]
+  recipe      String?
+  ingredients String[]
+  createdAt   DateTime   @default(now())
+
+  menuDrink   MenuDrink  @relation(fields: [menuDrinkId], references: [id], onDelete: Cascade)
+}
+
+// ==================== CONDITIONAL MENUS ====================
+
+model Menu {
+  id           String          @id @default(uuid())
+  barId        String
+  name         String
+  description  String?
+  isDefault    Boolean         @default(false)
+  displayOrder Int             @default(0)
+  createdAt    DateTime        @default(now())
+
+  bar          Bar             @relation(fields: [barId], references: [id], onDelete: Cascade)
+  conditions   MenuCondition[]
+  items        MenuMenuItem[]
+
+  @@unique([barId, name])
+}
+
+model MenuCondition {
+  id                String            @id @default(uuid())
+  menuId            String
+  conditionType     MenuConditionType
+  completionPercent Int?
+  completionBarId   String?
+  daysOfWeek        Int[]
+  months            Int[]
+  season            String?
+
+  menu              Menu              @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  completionBar     Bar?              @relation("CompletionCheck", fields: [completionBarId], references: [id])
+}
+
+model MenuMenuItem {
+  id           String    @id @default(uuid())
+  menuId       String
+  menuDrinkId  String
+  displayOrder Int       @default(0)
+
+  menu         Menu      @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  menuDrink    MenuDrink @relation(fields: [menuDrinkId], references: [id], onDelete: Cascade)
+
+  @@unique([menuId, menuDrinkId])
+}
+
+// ==================== ORDER MODELS ====================
 
 model Order {
   id            String         @id @default(uuid())
@@ -155,19 +344,16 @@ model Order {
   status        OrderStatus    @default(PENDING)
   photoUrl      String?
   photoTakenAt  DateTime?
-  validatedAt   DateTime?
+  acceptedAt    DateTime?
+  paidAt        DateTime?
+  deliveredAt   DateTime?
+  validatedAt   DateTime?      // Legacy - kept for backward compatibility
   createdAt     DateTime       @default(now())
 
   user          User           @relation(fields: [userId], references: [id])
   bar           Bar            @relation(fields: [barId], references: [id])
   items         OrderItem[]
   consumptions  Consumption[]
-}
-
-enum OrderStatus {
-  PENDING       // En attente préparation
-  VALIDATED     // Validé
-  CANCELLED     // Annulé (timeout photo)
 }
 
 model OrderItem {
@@ -181,13 +367,27 @@ model OrderItem {
   assignments OrderItemAssignment[]
 }
 
+model OrderItemAssignment {
+  id          String    @id @default(uuid())
+  orderItemId String
+  friendId    String?
+  friendName  String?
+  userId      String
+
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
+  friend      Friend?   @relation(fields: [friendId], references: [id])
+  user        User      @relation(fields: [userId], references: [id])
+}
+
+// ==================== CONSUMPTION & RATINGS ====================
+
 model Consumption {
   id            String         @id @default(uuid())
   userId        String
   barId         String
   drinkId       String
-  orderId       String?        
-  photoUrl      String?        
+  orderId       String?
+  photoUrl      String?
   validatedAt   DateTime
   createdAt     DateTime       @default(now())
 
@@ -213,83 +413,33 @@ model Rating {
   @@unique([userId, drinkId])
 }
 
-// Bar Dashboard
+// ==================== PHOTO SUBMISSIONS ====================
 
-model BarUser {
-  id          String      @id @default(uuid())
-  email       String      @unique
-  password    String      // Hashé avec bcrypt
-  name        String
-  isSuperAdmin Boolean    @default(false)
-  resetToken  String?
-  resetTokenExpiry DateTime?
-  createdAt   DateTime    @default(now())
-  
-  barAccess   BarUserAccess[]
-  createdDrinks Drink[]   @relation("DrinkCreator")
-  
-  @@map("bar_users")
+model PhotoSubmission {
+  id               String              @id @default(uuid())
+  userId           String
+  barId            String
+  photoUrl         String
+  status           PhotoStatus         @default(PENDING)
+  validatedAt      DateTime?
+  rejectedAt       DateTime?
+  rejectionReason  String?
+  moderatorComment String?
+  createdAt        DateTime            @default(now())
+
+  user          User                @relation(fields: [userId], references: [id])
+  bar           Bar                 @relation(fields: [barId], references: [id])
+
+  items         PhotoSubmissionItem[]
 }
 
-model BarUserAccess {
-  id        String      @id @default(uuid())
-  barUserId String
-  barId     String
-  role      BarRole
-  createdAt DateTime    @default(now())
-  
-  barUser   BarUser     @relation(fields: [barUserId], references: [id], onDelete: Cascade)
-  bar       Bar         @relation(fields: [barId], references: [id], onDelete: Cascade)
-  
-  @@unique([barUserId, barId])
-  @@map("bar_user_access")
-}
+model PhotoSubmissionItem {
+  id                  String            @id @default(uuid())
+  photoSubmissionId   String
+  drinkId             String
+  friendId            String?
 
-enum BarRole {
-  SUPER_ADMIN
-  OWNER       // Propriétaire - Tous les droits
-  MANAGER     // Gérant - Gestion quotidienne
-  STAFF       // Staff - Validation des commandes uniquement
-  VIEWER      // Lecture seule - Analytics
-}
-
-
-model Bar {
-  id            String         @id @default(uuid())
-  name          String
-  city          String
-  address       String
-  latitude      Decimal?       @db.Decimal(10, 7)
-  longitude     Decimal?       @db.Decimal(10, 7)
-  apiKey        String         @unique  // Simple auth MVP
-  qrCode        String         @unique  // URL QR code
-  ownerId       String?
-  active        Boolean        @default(false)
-  createdAt     DateTime       @default(now())
-
-  drinks        Drink[]        @relation("BarDrinks")
-  invitations   InvitationToken[]
-
-  menuDrinks    MenuDrink[]
-  consumptions  Consumption[]
-  orders        Order[]
-  photoSubmissions  PhotoSubmission[]
-
-  userAccess    BarUserAccess[]
-}
-
-model InvitationToken {
-  id          String      @id @default(uuid())
-  token       String      @unique
-  email       String
-  barId       String
-  role        BarRole
-  createdBy   String
-  expiresAt   DateTime
-  usedAt      DateTime?
-  createdAt   DateTime    @default(now())
-  
-  bar         Bar         @relation(fields: [barId], references: [id], onDelete: Cascade)
-  
-  @@map("invitation_tokens")
+  photoSubmission     PhotoSubmission   @relation(fields: [photoSubmissionId], references: [id])
+  drink               Drink             @relation(fields: [drinkId], references: [id])
+  friend              Friend?           @relation(fields: [friendId], references: [id])
 }

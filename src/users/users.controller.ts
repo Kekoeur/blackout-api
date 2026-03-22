@@ -122,4 +122,19 @@ export class UsersController {
   ) {
     return this.users.deleteAccount(user.id, data.password);
   }
+
+  // ==================== PUSH TOKENS ====================
+
+  @Post('push-token')
+  async savePushToken(
+    @CurrentUser() user: any,
+    @Body() data: { pushToken: string },
+  ) {
+    return this.users.savePushToken(user.id, data.pushToken);
+  }
+
+  @Delete('push-token')
+  async removePushToken(@CurrentUser() user: any) {
+    return this.users.removePushToken(user.id);
+  }
 }

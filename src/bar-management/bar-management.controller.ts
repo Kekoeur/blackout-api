@@ -217,5 +217,31 @@ export class BarManagementController {
     @Body() body: { address: string; city: string; postalCode?: string },
   ) {
     return this.barManagement.updateBarAddress(user.id, barId, body);
-}
+  }
+
+  // ==================== NOTIFICATION SETTINGS ====================
+
+  @Get('bars/:barId/notifications')
+  @UseGuards(BarDashboardAuthGuard)
+  async getNotificationSettings(
+    @CurrentBarUser() user: any,
+    @Param('barId') barId: string,
+  ) {
+    return this.barManagement.getNotificationSettings(user.id, barId);
+  }
+
+  @Patch('bars/:barId/notifications')
+  @UseGuards(BarDashboardAuthGuard)
+  async updateNotificationSettings(
+    @CurrentBarUser() user: any,
+    @Param('barId') barId: string,
+    @Body() body: {
+      pushNotificationsEnabled?: boolean;
+      notifyOnAccepted?: boolean;
+      notifyOnPaid?: boolean;
+      notifyOnDelivered?: boolean;
+    },
+  ) {
+    return this.barManagement.updateNotificationSettings(user.id, barId, body);
+  }
 }

@@ -270,7 +270,7 @@ export class BarManagementService {
     const validatedOrders = await this.prisma.order.findMany({
       where: { 
         barId, 
-        status: 'VALIDATED' 
+        status: 'DELIVERED' 
       },
       include: {
         items: {
@@ -311,7 +311,7 @@ export class BarManagementService {
       pendingPhotos,
       topDrinks,
     ] = await Promise.all([
-      this.prisma.order.count({ where: { barId, status: 'VALIDATED' } }),
+      this.prisma.order.count({ where: { barId, status: 'DELIVERED' } }),
       this.prisma.order.count({ where: { barId, status: 'PENDING' } }),
       this.prisma.photoSubmission.count({ where: { barId, status: 'PENDING' } }),
       this.prisma.orderItem.groupBy({
@@ -319,7 +319,7 @@ export class BarManagementService {
         where: {
           order: {
             barId,
-            status: 'VALIDATED',
+            status: 'DELIVERED',
           },
         },
         _count: true,
@@ -745,4 +745,73 @@ export class BarManagementService {
       bar,
     };
   }
+
+  // ==================== NOTIFICATION SETTINGS ====================
+
+  async getNotificationSettings(userId: string, barId: string) {
+    await this.checkPermission(userId, barId, 'MANAGER');
+
+    const bar = await this.prisma.bar.findUnique({
+      where: { id: barId },
+      select: {
+        id: true,
+        name: true,
+        pushNotificationsEnabled: true,
+        notifyOnAccepted: true,
+        notifyOnPaid: true,
+        notifyOnDelivered: true,
+      },
+    });
+
+    if (!bar) {
+      throw new NotFoundException('Bar not found');
+    }
+
+    return bar;
   }
+
+  async updateNotificationSettings(
+    userId: string,
+    barId: string,
+    data: {
+      pushNotificationsEnabled?: boolean;
+      notifyOnAccepted?: boolean;
+      notifyOnPaid?: boolean;
+      notifyOnDelivered?: boolean;
+    },
+  ) {
+    await this.checkPermission(userId, barId, 'MANAGER');
+
+    const bar = await this.prisma.bar.update({
+      where: { id: barId },
+      data: {
+        ...(data.pushNotificationsEnabled !== undefined && {
+          pushNotificationsEnabled: data.pushNotificationsEnabled,
+        }),
+        ...(data.notifyOnAccepted !== undefined && {
+          notifyOnAccepted: data.notifyOnAccepted,
+        }),
+        ...(data.notifyOnPaid !== undefined && {
+          notifyOnPaid: data.notifyOnPaid,
+        }),
+        ...(data.notifyOnDelivered !== undefined && {
+          notifyOnDelivered: data.notifyOnDelivered,
+        }),
+      },
+      select: {
+        id: true,
+        name: true,
+        pushNotificationsEnabled: true,
+        notifyOnAccepted: true,
+        notifyOnPaid: true,
+        notifyOnDelivered: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Notification settings updated',
+      bar,
+    };
+  }
+}

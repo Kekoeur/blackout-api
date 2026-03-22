@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException, BadRequestException, UnauthorizedExcept
 import { PrismaService } from '../prisma/prisma.service';
 import { PhotoModerationService } from './services/photo-moderation.service';
 import { ModerationStatus } from './enums/moderation.enum';
+import { EventsGateway } from '../events/events.gateway';
 import * as fs from 'fs';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class PhotosService {
   constructor(
     private prisma: PrismaService,
     private moderationService: PhotoModerationService,
+    private eventsGateway: EventsGateway,
   ) {}
 
   async submitPhoto(
@@ -125,6 +127,9 @@ export class PhotosService {
 
     this.logger.log(`✅ Photo submission created: ${submission.id}`);
 
+    // Notifier le dashboard en temps réel
+    this.eventsGateway.notifyNewPhoto(barId, submission);
+
     return submission;
   }
 
@@ -193,7 +198,7 @@ export class PhotosService {
       data: {
         userId: submission.userId,
         barId: submission.barId,
-        status: 'VALIDATED',
+        status: 'DELIVERED',
         photoUrl: submission.photoUrl,
         validatedAt: new Date(),
       },
@@ -406,7 +411,7 @@ export class PhotosService {
       data: {
         userId: submission.userId,
         barId: submission.barId,
-        status: 'VALIDATED',
+        status: 'DELIVERED',
         photoUrl: submission.photoUrl,
         validatedAt: new Date(),
       },
@@ -472,7 +477,9 @@ export class PhotosService {
 
     console.log('✅ Photo submission validated');
 
+    // Notifier le dashboard
+    this.eventsGateway.notifyPhotoValidated(barId, { id: submissionId, orderId: order.id });
+
     return { success: true, orderId: order.id };
   }
-
 }
